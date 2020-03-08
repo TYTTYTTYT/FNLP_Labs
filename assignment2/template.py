@@ -26,6 +26,7 @@ from nltk.probability import ConditionalProbDist
 
 from nltk.probability import LidstoneProbDist
 import itertools
+chain = itertools.chain.from_iterable
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 if map_tag('brown', 'universal', 'NR-TL') != 'NOUN':
@@ -76,7 +77,7 @@ class HMM:
         # Do NOT add <s> or </s> to the input sentences
 
         # Repack the train_data to list(tuple(tag, lowercase_word)) format
-        tagged_words = itertools.chain.from_iterable(train_data)
+        tagged_words = chain(train_data)
         data = [(tag, word.lower()) for (word, tag) in tagged_words]
 
         # Train the emission probilistic model
@@ -128,14 +129,20 @@ class HMM:
         # The data object should be an array of tuples of conditions and observations,
         # in our case the tuples will be of the form (tag_(i),tag_(i+1)).
         # DON'T FORGET TO ADD THE START SYMBOL </s> and the END SYMBOL </s>
+        
+        # Padding sentenses with <s> at beginning and </s> at end
         padded = [[('<s>', '<s>')] + s + [('</s>', '</s>')] for s  in train_data]
 
-        data = itertools.chain.from_iterable([[(s[i][1], s[i+1][1]) for i in range(len(s)-1)] for s in padded])
+        # Reform the data into list[tuple(tag_(i),tag_(i+1))]
+        data = chain([[(s[i][1], s[i+1][1]) \
+                               for i in range(len(s)-1)] for s in padded])
 
         # Compute the transition model
-        # states_size = len(self.states) + 2
+        # Reseal the lidston function with gamma 0.01 and a proper bin number
         lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B() + 1)
         transition_FD = ConditionalFreqDist(data)
+        
+        # Store the trainned conditinoal probabilistic distribution model
         self.transition_PD = ConditionalProbDist(transition_FD, lidstone_PD)
 
         return self.transition_PD
@@ -154,9 +161,12 @@ class HMM:
         :rtype: float
         """
         # raise NotImplementedError('HMM.tlprob')
+        
+        # If the model have not trained yet, train transition model first
         if self.transition_PD == None:
             self.transition_model(self.train_data)
 
+        # Calculate the log probability of a transition from state1 to state2
         return self.transition_PD[state1].logprob(state2)
 
     # Train the HMM
@@ -185,12 +195,52 @@ class HMM:
         #  transition from <s> to observation
         # use costs (-log-base-2 probabilities)
         # if the backpointer is 0 means this word is at the beginning
-        o = observation.lower()
+        
+        """
+        The self.viterbi is a chart of structure list[list[float]] looks like
+        __________________________
+        |    | o0 | o1 | o2 | ...
+        | q1 |cost|cost|cost| ...
+        | q2 |cost|cost|cost| ...
+        | q3 |cost|cost|cost| ...
+         ...  ...  ...  ...   ...
+         o_n represents the nth step, also the nth input word count from 0.
+         q_m represents the mth state in the self.states.
+         'cost' is a float represent the negative log likehood cost
+         Thus according to the position of the 'cost' we can know the lowest cost 
+         at step n while q_m is its tag.
+         So the cell q2o2 represents the lowest possible cost if the 2th word is 
+         the state q2
+         
+         The self.backpointer is a chart of structure list[list[int]] looks like
+        __________________________
+        |    | o0 | o1 | o2 | ...
+        | q1 |back|back|back| ...
+        | q2 |back|back|back| ...
+        | q3 |back|back|back| ...
+         ...  ...  ...  ...   ...
+         o_n represents the nth step, also the nth input word count from 0.
+         q_m represents the mth state in the self.states.
+         'back' is an integer represents the index in self.states
+         The 'back' on cell q_mo_n represents the lowest cost path to q_mo_n is from 
+         q_(back)o_(n-1)
+         Also, q_(back) means the 'back'th state in self.states
+        """
+                
+        # Initialise viterbi and backpointer matrix each time
         self.viterbi = []
-        self.viterbi.append([-(self.tlprob('<s>', p) + self.elprob(p, o)) for p in self.states])
-
         self.backpointer = []
-        self.backpointer.append((-1 for i in self.states))
+        
+        # The first word
+        o = observation.lower()
+        
+        # Update the viterbi matrix, the cost from <s> to the first word
+        # Transmission cost add emission cost
+        self.viterbi.append([-(self.tlprob('<s>', p) \
+                          + self.elprob(p, o)) for p in self.states])
+
+        # -1 in backpointer matrix represents <s>, the first column are all from <s>
+        self.backpointer.append([-1 for i in self.states])
 
 
     # Tag a new sentence using the trained model and already initialised data structures.
