@@ -81,9 +81,11 @@ class HMM:
 
         # Train the emission probilistic model
         emission_FD = ConditionalFreqDist(data)
-        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B())
+        # Reseal the lidston function with gamma 0.01 and a proper bin number
+        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B() + 1)
         self.emission_PD = ConditionalProbDist(emission_FD, lidstone_PD)
-        self.states = emission_FD.conditions() # tags
+        # Store the tags as states
+        self.states = emission_FD.conditions()
 
         return self.emission_PD, self.states
 
@@ -131,7 +133,8 @@ class HMM:
         data = itertools.chain.from_iterable([[(s[i][1], s[i+1][1]) for i in range(len(s)-1)] for s in padded])
 
         # Compute the transition model
-        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B())
+        # states_size = len(self.states) + 2
+        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B() + 1)
         transition_FD = ConditionalFreqDist(data)
         self.transition_PD = ConditionalProbDist(transition_FD, lidstone_PD)
 
@@ -184,10 +187,10 @@ class HMM:
         # if the backpointer is 0 means this word is at the beginning
         o = observation.lower()
         self.viterbi = []
-        self.viterbi.append([-(self.tlprob('<s>', o) + self.elprob(p, o)) for p in self.states])
+        self.viterbi.append([-(self.tlprob('<s>', p) + self.elprob(p, o)) for p in self.states])
 
         self.backpointer = []
-        self.backpointer.append((-1 for i in range(len(self.states))))
+        self.backpointer.append((-1 for i in self.states))
 
 
     # Tag a new sentence using the trained model and already initialised data structures.
@@ -224,22 +227,27 @@ class HMM:
             self.backpointer.append(backpointer)
 
         # Add a termination step with cost based solely on cost of transition to </s> , end of sentence.
+        self.backpointer.append(list(range(len(self.states))))
         ter = [0] * len(self.states)
-        minCost = 999999
+        idx = 0
         for ls in self.states:
-            newCost = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
-            if newCost < minCost:
-                minCost = newCost
-                newBackpointer = self.states.index(ls)
-        self.viterbi.append([minCost] * len(self.states))
-        self.backpointer.append([newBackpointer] * len(self.states))
-                       
+            ter[idx] = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
+        
+#         ter = [0] * len(self.states)
+#         minCost = 9999999
+#         for ls in self.states:
+#             newCost = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
+#             if newCost < minCost:
+#                 minCost = newCost
+#                 newBackpointer = self.states.index(ls)
+#         self.viterbi.append([minCost] * len(self.states))
+#         self.backpointer.append([newBackpointer] * len(self.states))
 
         # Reconstruct the tag sequence using the backpointer list.
         # Return the tag sequence corresponding to the best path as a list.
         # The order should match that of the words in the sentence.
         step += 1
-        backpointer = self.get_backpointer_value('</s>', step)
+        backpointer = self.states[self.viterbi[-1].index(min(self.viterbi[-1]))]
         while backpointer != '<s>':
             step -= 1
             tags.append(backpointer)
@@ -264,9 +272,7 @@ class HMM:
         :rtype: float
         """
         # raise NotImplementedError('HMM.get_viterbi_value')
-        nstep = self.states.index(state)
-        vit = self.viterbi[step]
-        return vit[nstep]
+        return self.viterbi[step][self.states.index(state)]
 
     # Access function for testing the backpointer data structure
     # For example model.get_backpointer_value('VERB',2) might be 'NOUN'
@@ -303,8 +309,8 @@ def answer_question4b():
     # One sentence, i.e. a list of word/tag pairs, in two versions
     #  1) As tagged by your HMM
     #  2) With wrong tags corrected by hand
-    tagged_sequence = [[('Tooling', 'X'), ('through', 'ADP'), ('Sydney', 'NOUN'), ('on', 'ADP'), ('his', 'DET'), ('way', 'NOUN'), ('to', 'ADP'), ('race', 'NOUN'), ('in', 'ADP'), ('the', 'DET'), ('New', 'ADJ'), ('Zealand', 'X'), ('Grand', 'X'), ('Prix', 'X'), (',', '.'), ("Britain's", 'X'), ('balding', 'X'), ('Ace', 'X'), ('Driver', 'X'), ('Stirling', 'X'), ('Moss', 'X'), (',', '.'), ('31', 'NUM'), (',', '.'), ('all', 'PRT'), ('but', 'CONJ'), ('smothered', 'ADV'), ('himself', 'PRON'), ('in', 'ADP'), ('his', 'DET'), ('own', 'ADJ'), ('exhaust', 'NOUN'), ('of', 'ADP'), ('self-crimination', 'NUM'), ('.', '.')], [('``', '.'), ('My', 'DET'), ('taste', 'NOUN'), ('is', 'VERB'), ('gaudy', 'ADV'), ('.', '.')], [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'CONJ'), ('racing', 'ADJ'), ('cars', 'NOUN'), ('.', '.')], [("I'm", 'X'), ('ruddy', 'X'), ('lazy', 'X'), (',', '.'), ('and', 'CONJ'), ("I'm", 'PRT'), ('getting', 'VERB'), ('on', 'ADP'), ('in', 'ADP'), ('years', 'NOUN'), ('.', '.')], [('It', 'PRON'), ('gets', 'VERB'), ('so', 'ADV'), ('frustrating', 'ADV'), (',', '.'), ('but', 'CONJ'), ('then', 'ADV'), ('again', 'ADV'), ('I', 'PRON'), ("don't", 'VERB'), ('know', 'VERB'), ('what', 'DET'), ('I', 'PRON'), ('could', 'VERB'), ('do', 'VERB'), ('if', 'ADP'), ('I', 'PRON'), ('gave', 'VERB'), ('up', 'PRT'), ('racing', 'VERB'), ("''", '.'), ('.', '.')], [('Has', 'X'), ('Moss', 'X'), ('no', 'X'), ('stirling', 'X'), ('virtues', 'X'), ('?', '.'), ('?', '.')], [('One', 'NUM'), ('of', 'ADP'), ('Nikita', 'X'), ("Khrushchev's", 'X'), ('most', 'X'), ('enthusiastic', 'X'), ('eulogizers', 'X'), (',', '.'), ('the', 'DET'), ("U.S.S.R.'s", 'X'), ('daily', 'X'), ('Izvestia', 'X'), (',', '.'), ('enterprisingly', 'X'), ('interviewed', 'X'), ('Red-prone', 'X'), ('Comedian', 'X'), ('Charlie', 'X'), ('Chaplin', 'X'), ('at', 'ADP'), ('his', 'DET'), ('Swiss', 'ADJ'), ('villa', 'NOUN'), (',', '.'), ('where', 'ADV'), ('he', 'PRON'), ('has', 'VERB'), ('been', 'VERB'), ('in', 'ADP'), ('self-exile', 'X'), ('since', 'X'), ('1952', 'X'), ('.', '.')], [('Chaplin', 'X'), (',', '.'), ('71', 'NUM'), (',', '.'), ('who', 'PRON'), ('met', 'VERB'), ('K.', 'NOUN'), ('when', 'ADV'), ('the', 'DET'), ('Soviet', 'NOUN'), ('boss', 'NOUN'), ('visited', 'VERB'), ('England', 'NOUN'), ('in', 'ADP'), ('1956', 'NUM'), (',', '.'), ('confided', 'ADV'), ('that', 'ADP'), ('he', 'PRON'), ('hopes', 'VERB'), ('to', 'PRT'), ('visit', 'VERB'), ('Russia', 'NOUN'), ('some', 'DET'), ('time', 'NOUN'), ('this', 'DET'), ('summer', 'NOUN'), ('because', 'ADV'), ('``', '.'), ('I', 'PRON'), ('have', 'VERB'), ('marveled', 'ADV'), ('at', 'ADP'), ('your', 'DET'), ('grandiose', 'ADJ'), ('experiment', 'NOUN'), ('and', 'CONJ'), ('I', 'PRON'), ('believe', 'VERB'), ('in', 'ADP'), ('your', 'DET'), ('future', 'NOUN'), ("''", '.'), ('.', '.')], [('Then', 'X'), ('Charlie', 'X'), ('spooned', 'X'), ('out', 'PRT'), ('some', 'DET'), ('quick', 'ADJ'), ('impressions', 'NOUN'), ('of', 'ADP'), ('the', 'DET'), ('Nikita', 'NOUN'), ('he', 'PRON'), ('had', 'VERB'), ('glimpsed', 'ADV'), (':', '.'), ('``', '.'), ('I', 'PRON'), ('was', 'VERB'), ('captivated', 'ADV'), ('by', 'ADP'), ('his', 'DET'), ('humor', 'NOUN'), (',', '.'), ('frankness', 'NOUN'), ('and', 'CONJ'), ('good', 'ADJ'), ('nature', 'NOUN'), ('and', 'CONJ'), ('by', 'ADP'), ('his', 'DET'), ('kind', 'NOUN'), (',', '.'), ('strong', 'ADJ'), ('and', 'CONJ'), ('somewhat', 'ADV'), ('sly', 'ADJ'), ('face', 'NOUN'), ("''", '.'), ('.', '.')], [('G.', 'NOUN'), ('David', 'NOUN'), ('Thompson', 'NOUN'), ('is', 'VERB'), ('one', 'NUM'), ('of', 'ADP'), ('those', 'DET'), ('names', 'NOUN'), ('known', 'VERB'), ('to', 'ADP'), ('the', 'DET'), ('stewards', 'NOUN'), ('of', 'ADP'), ('transatlantic', 'DET'), ('jetliners', 'NOUN'), ('and', 'CONJ'), ('to', 'ADP'), ('doormen', 'NOUN'), ('in', 'ADP'), ("Europe's", 'DET'), ('best', 'ADJ'), ('hotels', 'NOUN'), (',', '.'), ('but', 'CONJ'), ('he', 'PRON'), ('is', 'VERB'), ('somewhat', 'ADV'), ('of', 'ADP'), ('an', 'DET'), ('enigma', 'NOUN'), ('to', 'ADP'), ('most', 'ADJ'), ('people', 'NOUN'), ('in', 'ADP'), ('his', 'DET'), ('own', 'ADJ'), ('home', 'NOUN'), ('town', 'NOUN'), ('of', 'ADP'), ('Pittsburgh', 'NOUN'), ('.', '.')]]
-    correct_sequence = [[('Tooling', 'VERB'), ('through', 'ADP'), ('Sydney', 'NOUN'), ('on', 'ADP'), ('his', 'DET'), ('way', 'NOUN'), ('to', 'PRT'), ('race', 'VERB'), ('in', 'ADP'), ('the', 'DET'), ('New', 'ADJ'), ('Zealand', 'NOUN'), ('Grand', 'X'), ('Prix', 'X'), (',', '.'), ("Britain's", 'NOUN'), ('balding', 'ADJ'), ('Ace', 'NOUN'), ('Driver', 'NOUN'), ('Stirling', 'NOUN'), ('Moss', 'NOUN'), (',', '.'), ('31', 'NUM'), (',', '.'), ('all', 'PRT'), ('but', 'ADP'), ('smothered', 'VERB'), ('himself', 'PRON'), ('in', 'ADP'), ('his', 'DET'), ('own', 'ADJ'), ('exhaust', 'NOUN'), ('of', 'ADP'), ('self-crimination', 'NOUN'), ('.', '.')], [('``', '.'), ('My', 'DET'), ('taste', 'NOUN'), ('is', 'VERB'), ('gaudy', 'ADJ'), ('.', '.')], [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'ADP'), ('racing', 'VERB'), ('cars', 'NOUN'), ('.', '.')], [("I'm", 'PRT'), ('ruddy', 'ADV'), ('lazy', 'ADJ'), (',', '.'), ('and', 'CONJ'), ("I'm", 'PRT'), ('getting', 'VERB'), ('on', 'PRT'), ('in', 'ADP'), ('years', 'NOUN'), ('.', '.')], [('It', 'PRON'), ('gets', 'VERB'), ('so', 'ADV'), ('frustrating', 'ADJ'), (',', '.'), ('but', 'CONJ'), ('then', 'ADV'), ('again', 'ADV'), ('I', 'PRON'), ("don't", 'VERB'), ('know', 'VERB'), ('what', 'DET'), ('I', 'PRON'), ('could', 'VERB'), ('do', 'VERB'), ('if', 'ADP'), ('I', 'PRON'), ('gave', 'VERB'), ('up', 'PRT'), ('racing', 'VERB'), ("''", '.'), ('.', '.')], [('Has', 'VERB'), ('Moss', 'NOUN'), ('no', 'DET'), ('stirling', 'ADJ'), ('virtues', 'NOUN'), ('?', '.'), ('?', '.')], [('One', 'NUM'), ('of', 'ADP'), ('Nikita', 'NOUN'), ("Khrushchev's", 'NOUN'), ('most', 'ADV'), ('enthusiastic', 'ADJ'), ('eulogizers', 'NOUN'), (',', '.'), ('the', 'DET'), ("U.S.S.R.'s", 'NOUN'), ('daily', 'ADJ'), ('Izvestia', 'NOUN'), (',', '.'), ('enterprisingly', 'ADV'), ('interviewed', 'VERB'), ('Red-prone', 'ADJ'), ('Comedian', 'NOUN'), ('Charlie', 'NOUN'), ('Chaplin', 'NOUN'), ('at', 'ADP'), ('his', 'DET'), ('Swiss', 'ADJ'), ('villa', 'NOUN'), (',', '.'), ('where', 'ADV'), ('he', 'PRON'), ('has', 'VERB'), ('been', 'VERB'), ('in', 'ADP'), ('self-exile', 'NOUN'), ('since', 'ADP'), ('1952', 'NUM'), ('.', '.')], [('Chaplin', 'NOUN'), (',', '.'), ('71', 'NUM'), (',', '.'), ('who', 'PRON'), ('met', 'VERB'), ('K.', 'NOUN'), ('when', 'ADV'), ('the', 'DET'), ('Soviet', 'NOUN'), ('boss', 'NOUN'), ('visited', 'VERB'), ('England', 'NOUN'), ('in', 'ADP'), ('1956', 'NUM'), (',', '.'), ('confided', 'VERB'), ('that', 'ADP'), ('he', 'PRON'), ('hopes', 'VERB'), ('to', 'PRT'), ('visit', 'VERB'), ('Russia', 'NOUN'), ('some', 'DET'), ('time', 'NOUN'), ('this', 'DET'), ('summer', 'NOUN'), ('because', 'ADP'), ('``', '.'), ('I', 'PRON'), ('have', 'VERB'), ('marveled', 'VERB'), ('at', 'ADP'), ('your', 'DET'), ('grandiose', 'ADJ'), ('experiment', 'NOUN'), ('and', 'CONJ'), ('I', 'PRON'), ('believe', 'VERB'), ('in', 'ADP'), ('your', 'DET'), ('future', 'NOUN'), ("''", '.'), ('.', '.')], [('Then', 'ADJ'), ('Charlie', 'NOUN'), ('spooned', 'VERB'), ('out', 'PRT'), ('some', 'DET'), ('quick', 'ADJ'), ('impressions', 'NOUN'), ('of', 'ADP'), ('the', 'DET'), ('Nikita', 'NOUN'), ('he', 'PRON'), ('had', 'VERB'), ('glimpsed', 'VERB'), (':', '.'), ('``', '.'), ('I', 'PRON'), ('was', 'VERB'), ('captivated', 'VERB'), ('by', 'ADP'), ('his', 'DET'), ('humor', 'NOUN'), (',', '.'), ('frankness', 'NOUN'), ('and', 'CONJ'), ('good', 'ADJ'), ('nature', 'NOUN'), ('and', 'CONJ'), ('by', 'ADP'), ('his', 'DET'), ('kind', 'ADJ'), (',', '.'), ('strong', 'ADJ'), ('and', 'CONJ'), ('somewhat', 'ADV'), ('sly', 'ADJ'), ('face', 'NOUN'), ("''", '.'), ('.', '.')], [('G.', 'NOUN'), ('David', 'NOUN'), ('Thompson', 'NOUN'), ('is', 'VERB'), ('one', 'NUM'), ('of', 'ADP'), ('those', 'DET'), ('names', 'NOUN'), ('known', 'VERB'), ('to', 'ADP'), ('the', 'DET'), ('stewards', 'NOUN'), ('of', 'ADP'), ('transatlantic', 'ADJ'), ('jetliners', 'NOUN'), ('and', 'CONJ'), ('to', 'ADP'), ('doormen', 'NOUN'), ('in', 'ADP'), ("Europe's", 'NOUN'), ('best', 'ADJ'), ('hotels', 'NOUN'), (',', '.'), ('but', 'CONJ'), ('he', 'PRON'), ('is', 'VERB'), ('somewhat', 'ADV'), ('of', 'ADP'), ('an', 'DET'), ('enigma', 'NOUN'), ('to', 'ADP'), ('most', 'ADJ'), ('people', 'NOUN'), ('in', 'ADP'), ('his', 'DET'), ('own', 'ADJ'), ('home', 'NOUN'), ('town', 'NOUN'), ('of', 'ADP'), ('Pittsburgh', 'NOUN'), ('.', '.')]]
+    tagged_sequence = [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'CONJ'), ('racing', 'ADJ'), ('cars', 'NOUN'), ('.', '.')]
+    correct_sequence = [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'ADP'), ('racing', 'VERB'), ('cars', 'NOUN'), ('.', '.')]
     # Why do you think the tagger tagged this example incorrectly?
     answer =  inspect.cleandoc("""\
     fill me in""")[0:280]
@@ -430,8 +436,8 @@ def answers():
             gold_sents.append(sentence)
             origin_sent = [word for (word, tag) in sentence]
             tagged_sents.append(list(zip(origin_sent, tags)))
-    # print(gold_sents)
-    # print(tagged_sents)
+    print(gold_sents)
+    print(tagged_sents)
         
 
     accuracy = correct / (correct + incorrect) # fix me
