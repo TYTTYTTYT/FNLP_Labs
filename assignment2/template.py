@@ -25,7 +25,7 @@ from nltk.probability import ConditionalFreqDist
 from nltk.probability import ConditionalProbDist
 
 from nltk.probability import LidstoneProbDist
-import itertools
+import itertools, math
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 if map_tag('brown', 'universal', 'NR-TL') != 'NOUN':
@@ -79,12 +79,10 @@ class HMM:
         tagged_words = itertools.chain.from_iterable(train_data)
         data = [(tag, word.lower()) for (word, tag) in tagged_words]
 
-        # Set with unique word in the train_data
-        vocabulary = set([word for (tag, word) in data])
-
         # Train the emission probilistic model
         emission_FD = ConditionalFreqDist(data)
-        self.emission_PD = ConditionalProbDist(emission_FD, LidstoneProbDist, gamma=0.01, bins=len(vocabulary))
+        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B()**2 - FD.B())
+        self.emission_PD = ConditionalProbDist(emission_FD, lidstone_PD)
         self.states = emission_FD.conditions() # tags
 
         return self.emission_PD, self.states
@@ -102,8 +100,14 @@ class HMM:
         :return: log base 2 of the estimated emission probability
         :rtype: float
         """
-        raise NotImplementedError('HMM.elprob')
-        return ... # fixme
+        # Avoid repeating training
+        if self.emission_PD == None:
+            self.emission_model(self.train_data)
+
+        # raise NotImplementedError('HMM.elprob')
+
+        # Calculate the log probability of a word with given tag/state, base 2
+        return self.emission_PD[state].logprob(word)
 
     # Compute transition model using ConditionalProbDist with a LidstonelprobDist estimator.
     # See comments for emission_model above for details on the estimator.
@@ -116,20 +120,20 @@ class HMM:
         :return: The transition probability distribution
         :rtype: ConditionalProbDist
         """
-        raise NotImplementedError('HMM.transition_model')
-        # TODO: prepare the data
-        data = []
+        # raise NotImplementedError('HMM.transition_model')
+
 
         # The data object should be an array of tuples of conditions and observations,
         # in our case the tuples will be of the form (tag_(i),tag_(i+1)).
         # DON'T FORGET TO ADD THE START SYMBOL </s> and the END SYMBOL </s>
-        for s in train_data:
-            pass  # TODO
+        padded = [[('<s>', '<s>')] + s + [('</s>', '</s>')] for s  in train_data]
 
-        # TODO compute the transition model
+        data = itertools.chain.from_iterable([[(s[i][1], s[i+1][1]) for i in range(len(s)-1)] for s in padded])
 
-        transition_FD = 'fixme'
-        self.transition_PD = 'fixme'
+        # Compute the transition model
+        lidstone_PD = lambda FD: LidstoneProbDist(FD, gamma=0.01, bins=FD.B()**2 - FD.B())
+        transition_FD = ConditionalFreqDist(data)
+        self.transition_PD = ConditionalProbDist(transition_FD, lidstone_PD)
 
         return self.transition_PD
 
@@ -146,8 +150,11 @@ class HMM:
         :return: log base 2 of the estimated transition probability
         :rtype: float
         """
-        raise NotImplementedError('HMM.tlprob')
-        return ... # fixme
+        # raise NotImplementedError('HMM.tlprob')
+        if self.transition_PD == None:
+            self.transition_model(self.train_data)
+
+        return self.transition_PD[state1].logprob(state2)
 
     # Train the HMM
     def train(self):
@@ -170,14 +177,18 @@ class HMM:
         :param observation: the first word in the sentence to tag
         :type observation: str
         """
-        raise NotImplementedError('HMM.initialise')
+        # raise NotImplementedError('HMM.initialise')
         # Initialise step 0 of viterbi, including
         #  transition from <s> to observation
         # use costs (-log-base-2 probabilities)
-        # TODO
+        # if the backpointer is 0 means this word is at the beginning
+        o = observation.lower()
+        self.viterbi = []
+        self.viterbi.append((-(self.tlprob('<s>', o) + self.elprob(p, o)) for p in self.states))
 
-        # Initialise step 0 of backpointer
-        # TODO
+        self.backpointer = []
+        self.backpointer.append((-1 for i in len(self.states)))
+
 
     # Tag a new sentence using the trained model and already initialised data structures.
     # Use the models stored in the variables: self.emission_PD and self.transition_PD.
@@ -191,21 +202,37 @@ class HMM:
         :type observations: list(str)
         :return: List of tags corresponding to each word of the input
         """
-        raise NotImplementedError('HMM.tag')
+        # raise NotImplementedError('HMM.tag')
+
+        o = [w.lower() for w in observations]
         tags = []
 
-        for t in ...: # fixme to iterate over steps
-            for s in ...: # fixme to iterate over states
-                pass # fixme to update the viterbi and backpointer data structures
-                #  Use costs, not probabilities
+        step = -1
+        for t in o: # fixme to iterate over steps
+            viterbi = [999999999] * len(self.states)
+            backpointer = [-1] * len(self.states)
+            step += 1
+            for s in self.states: # fixme to iterate over states
+                for ls in self.states:
+                    cost = -(self.tlprob(ls, s) + self.elprob(ns, t)) + self.get_viterbi_value(ls, step)
+                    if cost < viterbi[self.states.index(s)]:
+                        viterbi[self.states.index(s)] = cost
+                        backpointer[self.states.index(s)] = self.states.index(ls)
+            self.viterbi.append(viterbi)
+            self.backpointer.apppend(backpointer)
 
-        # TODO
         # Add a termination step with cost based solely on cost of transition to </s> , end of sentence.
+        ter = [0] * len(self.states)
+        self.backpointer.append(range(len(self.states)))
+        for ls in states:
+            ter[self.states.index(ls)] = self.get_viterbi_value(ls, step+1) + self.tlprob(ls, '</s>')
+            breakpointer
+        self.viterbi.apppend(ter)
 
-        # TODO
         # Reconstruct the tag sequence using the backpointer list.
         # Return the tag sequence corresponding to the best path as a list.
         # The order should match that of the words in the sentence.
+        step += 2
         tags = ... # fixme
 
         return tags
@@ -225,8 +252,8 @@ class HMM:
         :return: The value (a cost) for state as of step
         :rtype: float
         """
-        raise NotImplementedError('HMM.get_viterbi_value')
-        return ... # fix me
+        # raise NotImplementedError('HMM.get_viterbi_value')
+        return self.viterbi[step][self.states.index(state)]
 
     # Access function for testing the backpointer data structure
     # For example model.get_backpointer_value('VERB',2) might be 'NOUN'
@@ -243,8 +270,11 @@ class HMM:
         :return: The state name to go back to at step-1
         :rtype: str
         """
-        raise NotImplementedError('HMM.get_backpointer_value')
-        return ... # fix me
+        # raise NotImplementedError('HMM.get_backpointer_value')
+
+        if step == 0 or step == -len(self.chart):
+            return '<s>'
+        return self.states[self.backpointer[step][self.states.index(state)]]
 
 def answer_question4b():
     """
