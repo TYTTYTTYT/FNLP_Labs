@@ -17,6 +17,7 @@ except NameError:
 
 from nltk.corpus import brown
 from nltk.tag import map_tag, tagset_mapping
+
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # module for computing a Conditional Frequency Distribution
 from nltk.probability import ConditionalFreqDist
@@ -33,6 +34,7 @@ if map_tag('brown', 'universal', 'NR-TL') != 'NOUN':
     # Out-of-date tagset, we add a few that we need
     tm=tagset_mapping('en-brown','universal')
     tm['NR-TL']=tm['NR-TL-HL']='NOUN'
+
 
 class HMM:
     def __init__(self, train_data, test_data):
@@ -124,7 +126,6 @@ class HMM:
         :rtype: ConditionalProbDist
         """
         # raise NotImplementedError('HMM.transition_model')
-
 
         # The data object should be an array of tuples of conditions and observations,
         # in our case the tuples will be of the form (tag_(i),tag_(i+1)).
@@ -236,12 +237,10 @@ class HMM:
         
         # Update the viterbi matrix, the cost from <s> to the first word
         # Transmission cost add emission cost
-        self.viterbi.append([-(self.tlprob('<s>', p) \
-                          + self.elprob(p, o)) for p in self.states])
+        self.viterbi.append([-(self.tlprob('<s>', p) + self.elprob(p, o)) for p in self.states])
 
-        # -1 in backpointer matrix represents <s>, the first column are all from <s>
+        # -1 in backpointer matrix represents <s>, the first column are all point to <s>, so fill -1
         self.backpointer.append([-1 for i in self.states])
-
 
     # Tag a new sentence using the trained model and already initialised data structures.
     # Use the models stored in the variables: self.emission_PD and self.transition_PD.
@@ -257,51 +256,51 @@ class HMM:
         """
         # raise NotImplementedError('HMM.tag')
 
-        o = [w.lower() for w in observations]
-        tags = []
+        # Transfer the observations into lowercase
+        o = [word.lower() for word in observations]
+        tags = []   # Initial the tag list
+        m = len(self.states)    # number of states recorded in m
 
         step = 0
-        for t in o: # fixme to iterate over steps
-            viterbi = [999999999] * len(self.states)
-            backpointer = [-1] * len(self.states)
+        for t in o: # iterate over steps, from step 1 to the last step
+            # Initial the lowest cost as a very large value
+            viterbi = [999999999] * m    # new column in viterbi matrix
+            backpointer = [-1] * m       # new column in backpointer matrix
             
-            for s in self.states: # fixme to iterate over states
-                for ls in self.states:
-                    cost = -(self.tlprob(ls, s) + self.elprob(s, t)) \
-                    + self.get_viterbi_value(ls, step)
+            for s in self.states:   # iterate over states, to find the best current state
+                for ls in self.states:  # for each current possible state, find the best last state
+                    # cost is the sum of last step cost, transmission cost from last state and the emission cost
+                    cost = -(self.tlprob(ls, s) + self.elprob(s, t)) + self.get_viterbi_value(ls, step)
+                    # update the viterbi and backpointer matrix if the new cost is smaller
                     if cost < viterbi[self.states.index(s)]:
                         viterbi[self.states.index(s)] = cost
                         backpointer[self.states.index(s)] = self.states.index(ls)
-            step += 1
+            step += 1   # do next step/word
+            # append the new columns
             self.viterbi.append(viterbi)
             self.backpointer.append(backpointer)
 
         # Add a termination step with cost based solely on cost of transition to </s> , end of sentence.
-        self.backpointer.append(list(range(len(self.states))))
-        ter = [0] * len(self.states)
+        terminate = [0] * m   # Initial the terminate step
+        # Count from 0, update the cost
         idx = 0
         for ls in self.states:
-            ter[idx] = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
-        
-#         ter = [0] * len(self.states)
-#         minCost = 9999999
-#         for ls in self.states:
-#             newCost = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
-#             if newCost < minCost:
-#                 minCost = newCost
-#                 newBackpointer = self.states.index(ls)
-#         self.viterbi.append([minCost] * len(self.states))
-#         self.backpointer.append([newBackpointer] * len(self.states))
+            # add the transmission cost from the final state to </s>
+            terminate[idx] = self.get_viterbi_value(ls, step) - self.tlprob(ls, '</s>')
+            idx += 1
 
         # Reconstruct the tag sequence using the backpointer list.
         # Return the tag sequence corresponding to the best path as a list.
         # The order should match that of the words in the sentence.
-        step += 1
-        backpointer = self.states[self.viterbi[-1].index(min(self.viterbi[-1]))]
+
+        # Find the state with minimum cost in the terminate step
+        backpointer = self.states[terminate.index(min(terminate))]
+        # Retrace the tags from the minimum cost in terminate
         while backpointer != '<s>':
-            step -= 1
             tags.append(backpointer)
             backpointer = self.get_backpointer_value(backpointer, step)
+            step -= 1
+        # Reverse the tags so it has a normal sequence
         tags.reverse()
 
         return tags
@@ -347,6 +346,7 @@ class HMM:
             return self.states[self.backpointer[step][0]]
         return self.states[self.backpointer[step][self.states.index(state)]]
 
+
 def answer_question4b():
     """
     Report a hand-chosen tagged sequence that is incorrect, correct it
@@ -359,13 +359,13 @@ def answer_question4b():
     # One sentence, i.e. a list of word/tag pairs, in two versions
     #  1) As tagged by your HMM
     #  2) With wrong tags corrected by hand
-    tagged_sequence = [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'CONJ'), ('racing', 'ADJ'), ('cars', 'NOUN'), ('.', '.')]
-    correct_sequence = [("I'm", 'PRT'), ('useless', 'ADJ'), ('for', 'ADP'), ('anything', 'NOUN'), ('but', 'ADP'), ('racing', 'VERB'), ('cars', 'NOUN'), ('.', '.')]
+    tagged_sequence = [('``', '.'), ('My', 'DET'), ('taste', 'NOUN'), ('is', 'VERB'), ('gaudy', 'ADV'), ('.', '.')]
+    correct_sequence = [('``', '.'), ('My', 'DET'), ('taste', 'NOUN'), ('is', 'VERB'), ('gaudy', 'ADJ'), ('.', '.')]
     # Why do you think the tagger tagged this example incorrectly?
-    answer =  inspect.cleandoc("""\
-    fill me in""")[0:280]
+    answer =  inspect.cleandoc("""The HMM model can only capture 2-word history, not long-range dependencies. 'gaudy' is for 'taste', but HMM model only knows it follows a VERB, so tags it as ADV rather than ADJ. Because ADV is more likely follows a VERB, and 'gaudy' has similar cost being ADJ or ADV.""")[0:280]
 
     return tagged_sequence, correct_sequence, answer
+
 
 def answer_question5():
     """
@@ -380,8 +380,8 @@ def answer_question5():
     """
     # raise NotImplementedError('answer_question5')
 
-    return inspect.cleandoc("""\
-    fill me in""")[0:500]
+    return inspect.cleandoc("""When no global ambiguities and no unkonw words, the original parser only have 1 valid output, we directly use the output. If there are global ambiguities, the original parser has multiple valid results, use the pre-trained POS tagger to find the most likely one. And if there are unknown words, use the pre-trained tagger to find the most likely tag of that word depends on the transition probabilitiy. So it always better or as well as the original parser.""")[0:500]
+
 
 def answer_question6():
     """
@@ -394,13 +394,14 @@ def answer_question6():
     """
     # raise NotImplementedError('answer_question6')
 
-    return inspect.cleandoc("""\
-    fill me in""")[0:500]
+    return inspect.cleandoc("""If we use the original tagset, the accuracy on the test set will be much lower. Because with more tags, each tag/word pair has less ovservations, so we have few confidence level on the probability model. And more tags depends on long-range effects, but HMM nodel only catch 2 word history, so they are more errors. And using large complex tagset the annotor is more likely to make errors. Thus the overall accuracy will be lower.""")[0:500]
+
 
 # Useful for testing
 def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
     # http://stackoverflow.com/a/33024979
     return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
 
 def answers():
     global tagged_sentences_universal, test_data_universal, \
@@ -415,8 +416,8 @@ def answers():
     test_size = 500
     train_size = len(tagged_sentences_universal) - test_size
 
-    test_data_universal = tagged_sentences_universal[-test_size:] # fixme
-    train_data_universal = tagged_sentences_universal[:train_size] # fixme
+    test_data_universal = tagged_sentences_universal[-test_size:]
+    train_data_universal = tagged_sentences_universal[:train_size]
 
     if hashlib.md5(''.join(map(lambda x:x[0],train_data_universal[0]+train_data_universal[-1]+test_data_universal[0]+test_data_universal[-1])).encode('utf-8')).hexdigest()!='164179b8e679e96b2d7ff7d360b75735':
         print('!!!test/train split (%s/%s) incorrect, most of your answers will be wrong hereafter!!!'%(len(train_data_universal),len(test_data_universal)),file=sys.stderr)
@@ -461,7 +462,6 @@ def answers():
     if not (type(b_sample)==str and b_sample in model.states):
            print('backpointer value (%s) must be a state name'%b_sample,file=sys.stderr)
 
-
     # check the model's accuracy (% correct) using the test set
     correct = 0
     incorrect = 0
@@ -477,9 +477,9 @@ def answers():
 
         for ((word,gold),tag) in zip(sentence,tags):
             if tag == gold:
-                correct += 1 # fix me
+                correct += 1
             else:
-                incorrect += 1 # fix me
+                incorrect += 1
                 wrong = True
         if wrong and idx < 10:
             idx += 1
@@ -488,9 +488,9 @@ def answers():
             tagged_sents.append(list(zip(origin_sent, tags)))
     print(gold_sents)
     print(tagged_sents)
-        
 
-    accuracy = correct / (correct + incorrect) # fix me
+    # Calculate the accuracy
+    accuracy = correct / (correct + incorrect)
     print('Tagging accuracy for test set of %s sentences: %.4f'%(test_size,accuracy))
 
     # Print answers for 4b, 5 and 6
@@ -507,6 +507,7 @@ def answers():
     answer6=answer_question6()
     print('\nFor Q6:')
     print(answer6[:500])
+
 
 if __name__ == '__main__':
     if len(sys.argv)>1 and sys.argv[1] == '--answers':
